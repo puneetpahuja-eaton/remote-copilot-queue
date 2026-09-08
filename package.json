@@ -1,0 +1,10 @@
+{
+  "name": "remote-copilot-queue",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Authenticated Supabase queue and local worker for remote Copilot CLI commands.",
+  "scripts": {
+    "start:worker": "node worker.js",
+    "check": "node --check worker.js"
+  }
+}

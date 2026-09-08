@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Remote Copilot Commands</title>
+  <style>
+    body { max-width: 900px; margin: 2rem auto; padding: 0 1rem; font: 16px system-ui, sans-serif; background: #101828; color: #f9fafb; }
+    input, textarea, button { box-sizing: border-box; width: 100%; padding: .7rem; margin: .25rem 0 1rem; border-radius: .4rem; border: 1px solid #475467; font: inherit; }
+    input, textarea { background: #1d2939; color: #fff; } textarea { min-height: 9rem; }
+    button { background: #2e90fa; border: 0; color: #fff; cursor: pointer; font-weight: 700; } button.secondary { background: #475467; }
+    article { margin: 1rem 0; padding: 1rem; border-radius: .5rem; background: #1d2939; } pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #101828; padding: .75rem; border-radius: .3rem; }
+    .hidden { display: none; } .status { font-weight: 700; text-transform: uppercase; } #message { color: #fdb022; }
+  </style>
+</head>
+<body>
+  <h1>Remote Copilot Commands</h1>
+  <p id="message">Sign in to continue.</p>
+  <section id="auth">
+    <label>Email <input id="email" type="email" autocomplete="email"></label>
+    <label>Password <input id="password" type="password" autocomplete="current-password"></label>
+    <button id="sign-in">Sign in</button>
+    <button id="sign-up" class="secondary">Create account</button>
+  </section>
+  <section id="app" class="hidden">
+    <button id="sign-out" class="secondary">Sign out</button>
+    <label>Command for Copilot <textarea id="prompt" placeholder="Build stm32h735ig_per@hw4 and report errors."></textarea></label>
+    <button id="submit">Submit command</button>
+    <section id="commands"></section>
+  </section>
+  <script src="config.js"></script>
+  <script>
+    const $ = (selector) => document.querySelector(selector);
+    let accessToken;
+    function headers() { return { apikey: SUPABASE_ANON_KEY, authorization: `Bearer ${accessToken}` }; }
+    async function request(url, options = {}) {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/${url}`, { ...options, headers: { ...headers(), ...(options.headers || {}) } });
+      if (!response.ok) throw new Error(await response.text());
+      return response.status === 204 ? undefined : response.json();
+    }
+    function show(message) { $("#message").textContent = message; }
+    function escapeHtml(value) { const div = document.createElement("div"); div.textContent = value; return div.innerHTML; }
+    async function refresh() {
+      if (!accessToken) return;
+      try {
+        const commands = await request("copilot_commands?select=id,prompt,status,output,exit_code,created_at&order=created_at.desc&limit=20");
+        $("#commands").innerHTML = commands.map((job) => `<article><div class="status">${job.status} #${job.id.slice(0, 8)}</div><p>${escapeHtml(job.prompt)}</p><pre>${escapeHtml(job.output || "Waiting for output...")}</pre></article>`).join("");
+      } catch (error) { show(error.message); }
+    }
+    async function authenticate(signUp) {
+      try {
+        const response = await fetch(`${SUPABASE_URL}/auth/v1/${signUp ? "signup" : "token?grant_type=password"}`, {
+          method: "POST", headers: { apikey: SUPABASE_ANON_KEY, "content-type": "application/json" },
+          body: JSON.stringify({ email: $("#email").value, password: $("#password").value }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.msg || data.error_description || "Authentication failed.");
+        if (!data.access_token) return show("Check your email to confirm the account, then sign in.");
+        accessToken = data.access_token;
+        $("#auth").classList.add("hidden"); $("#app").classList.remove("hidden"); show("Signed in.");
+        refresh();
+      } catch (error) { show(error.message); }
+    }
+    $("#sign-in").onclick = () => authenticate(false);
+    $("#sign-up").onclick = () => authenticate(true);
+    $("#sign-out").onclick = () => { accessToken = undefined; $("#auth").classList.remove("hidden"); $("#app").classList.add("hidden"); show("Signed out."); };
+    $("#submit").onclick = async () => {
+      const prompt = $("#prompt").value.trim();
+      if (!prompt) return;
+      try {
+        await request("copilot_commands", { method: "POST", headers: { "content-type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ owner_id: JSON.parse(atob(accessToken.split(".")[1])).sub, prompt }) });
+        $("#prompt").value = ""; show("Command queued."); refresh();
+      } catch (error) { show(error.message); }
+    };
+    setInterval(refresh, 3000);
+  </script>
+</body>
+</html>
