@@ -35,8 +35,9 @@
     function headers() { return { apikey: SUPABASE_ANON_KEY, authorization: `Bearer ${accessToken}` }; }
     async function request(url, options = {}) {
       const response = await fetch(`${SUPABASE_URL}/rest/v1/${url}`, { ...options, headers: { ...headers(), ...(options.headers || {}) } });
-      if (!response.ok) throw new Error(await response.text());
-      return response.status === 204 ? undefined : response.json();
+      const text = await response.text();
+      if (!response.ok) throw new Error(text || `Request failed with status ${response.status}`);
+      return text ? JSON.parse(text) : undefined;
     }
     function show(message) { $("#message").textContent = message; }
     function escapeHtml(value) { const div = document.createElement("div"); div.textContent = value; return div.innerHTML; }
