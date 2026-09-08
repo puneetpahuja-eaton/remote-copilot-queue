@@ -26,6 +26,21 @@ npm run start:worker
 6. Use the Netlify URL from any mobile network. Create an account, sign in,
    submit a command, and view the result.
 
+## Corporate TLS inspection
+
+If the worker prints `SELF_SIGNED_CERT_IN_CHAIN`, the company network is
+intercepting HTTPS with an internal certificate authority that Node.js does not
+yet trust. Obtain the company root CA certificate from IT as a PEM-encoded
+`.pem` or `.crt` file, save it outside this repository, then set this variable
+in the same PowerShell window before starting the worker:
+
+```powershell
+$env:NODE_EXTRA_CA_CERTS = "C:\Path\To\company-root-ca.pem"
+```
+
+Do not set `NODE_TLS_REJECT_UNAUTHORIZED=0`; that disables certificate
+verification and makes the command service unsafe.
+
 ## Security
 
 - Keep `SUPABASE_SERVICE_ROLE_KEY` exclusively on the laptop.

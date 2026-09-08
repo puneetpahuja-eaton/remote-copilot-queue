@@ -77,7 +77,10 @@ async function poll() {
       });
     }
   } catch (error) {
-    console.error(error.message);
+    const cause = error instanceof Error && error.cause instanceof Error
+      ? ` (${error.cause.code || "network error"}: ${error.cause.message})`
+      : "";
+    console.error(`${error.message}${cause}`);
   } finally {
     setTimeout(poll, pollMs);
   }
