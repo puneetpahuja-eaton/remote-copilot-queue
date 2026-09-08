@@ -41,7 +41,9 @@ async function api(route, options = {}) {
   return response.status === 204 ? undefined : response.json();
 }
 
-function execute(prompt) {
+const streamMs = Number(process.env.COPILOT_STREAM_MS || 2000);
+
+function execute(prompt, onOutput) {
   return new Promise((resolve) => {
     const child = spawn(command, [
       ...commandPrefix,
@@ -51,10 +53,23 @@ function execute(prompt) {
       "--allow-all-paths",
     ], { cwd: workspace, env: process.env, windowsHide: true });
     let output = "";
-    child.stdout.on("data", (chunk) => { output += chunk; });
-    child.stderr.on("data", (chunk) => { output += chunk; });
-    child.on("error", (error) => resolve({ exitCode: 1, output: `Unable to start Copilot CLI: ${error.message}` }));
-    child.on("close", (exitCode) => resolve({ exitCode, output: output.trim() || "(Copilot returned no output.)" }));
+    let dirty = false;
+    const flush = () => {
+      if (!dirty) return;
+      dirty = false;
+      onOutput(output);
+    };
+    const streamTimer = setInterval(flush, streamMs);
+    child.stdout.on("data", (chunk) => { output += chunk; dirty = true; });
+    child.stderr.on("data", (chunk) => { output += chunk; dirty = true; });
+    child.on("error", (error) => {
+      clearInterval(streamTimer);
+      resolve({ exitCode: 1, output: `Unable to start Copilot CLI: ${error.message}` });
+    });
+    child.on("close", (exitCode) => {
+      clearInterval(streamTimer);
+      resolve({ exitCode, output: output.trim() || "(Copilot returned no output.)" });
+    });
   });
 }
 
@@ -64,7 +79,14 @@ async function poll() {
     const job = commands[0];
     if (job) {
       console.log(`Running command ${job.id}`);
-      const result = await execute(job.prompt);
+      const pushOutput = (output) => {
+        api(`copilot_commands?id=eq.${job.id}`, {
+          method: "PATCH",
+          headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({ output }),
+        }).catch((error) => console.error(`Live update failed: ${error.message}`));
+      };
+      const result = await execute(job.prompt, pushOutput);
       await api(`copilot_commands?id=eq.${job.id}`, {
         method: "PATCH",
         headers: { Prefer: "return=minimal" },
