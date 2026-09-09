@@ -14,12 +14,32 @@ const windowsLoader = path.join(
   "copilot",
   "npm-loader.js"
 );
-const command = process.env.COPILOT_COMMAND || (
+const command = process.env.CLI_COMMAND || process.env.COPILOT_COMMAND || (
   process.platform === "win32" && existsSync(windowsLoader) ? process.execPath : "copilot"
 );
-const commandPrefix = process.platform === "win32" && existsSync(windowsLoader)
+const commandPrefix = process.platform === "win32" && existsSync(windowsLoader) && !process.env.CLI_COMMAND
   ? [windowsLoader]
   : [];
+// Everything below lets you point this worker at a different CLI (e.g. an "antigravity" CLI on
+// another machine) purely via environment variables, without touching this file:
+//   CLI_COMMAND            executable name/path (default: "copilot")
+//   CLI_WORKSPACE_FLAG     flag used to set the working directory (default: "-C"); set to "" to omit
+//   CLI_PROMPT_FLAG        flag used to pass the prompt text (default: "-p")
+//   CLI_EXTRA_ARGS         extra space-separated args appended after prompt (default: Copilot's
+//                          "--allow-all-tools --allow-all-paths"); set to "" to omit entirely
+//   CLI_REASONING_EFFORT_FLAG  flag name for reasoning effort (default: "--reasoning-effort");
+//                              set to "" to skip passing effort/model flags for CLIs that don't support them
+const workspaceFlag = process.env.CLI_WORKSPACE_FLAG ?? "-C";
+const promptFlag = process.env.CLI_PROMPT_FLAG ?? "-p";
+const extraArgs = (process.env.CLI_EXTRA_ARGS ?? "--allow-all-tools --allow-all-paths")
+  .split(" ")
+  .filter(Boolean);
+const reasoningEffortFlag = process.env.CLI_REASONING_EFFORT_FLAG ?? "--reasoning-effort";
+const modelFlag = process.env.CLI_MODEL_FLAG ?? "--model";
+// Lower reasoning effort trades some depth for significantly faster, cheaper responses.
+// Override with COPILOT_REASONING_EFFORT=high (etc.) for tasks that need deeper reasoning.
+const reasoningEffort = process.env.COPILOT_REASONING_EFFORT || "low";
+const model = process.env.COPILOT_MODEL; // optional; unset lets the CLI pick its default
 
 function required(name) {
   const value = process.env[name];
@@ -68,13 +88,15 @@ const streamMs = Number(process.env.COPILOT_STREAM_MS || 2000);
 
 function execute(prompt, onOutput) {
   return new Promise((resolve) => {
-    const child = spawn(command, [
+    const args = [
       ...commandPrefix,
-      "-C", workspace,
-      "-p", prompt,
-      "--allow-all-tools",
-      "--allow-all-paths",
-    ], { cwd: workspace, env: process.env, windowsHide: true });
+      ...(workspaceFlag ? [workspaceFlag, workspace] : []),
+      ...(promptFlag ? [promptFlag, prompt] : [prompt]),
+      ...extraArgs,
+      ...(reasoningEffortFlag ? [reasoningEffortFlag, reasoningEffort] : []),
+      ...(model && modelFlag ? [modelFlag, model] : []),
+    ];
+    const child = spawn(command, args, { cwd: workspace, env: process.env, windowsHide: true });
     let output = "";
     let dirty = false;
     const flush = () => {
@@ -87,20 +109,22 @@ function execute(prompt, onOutput) {
     child.stderr.on("data", (chunk) => { output += chunk; dirty = true; });
     child.on("error", (error) => {
       clearInterval(streamTimer);
-      resolve({ exitCode: 1, output: `Unable to start Copilot CLI: ${error.message}` });
+      resolve({ exitCode: 1, output: `Unable to start CLI (${command}): ${error.message}` });
     });
     child.on("close", (exitCode) => {
       clearInterval(streamTimer);
-      resolve({ exitCode, output: output.trim() || "(Copilot returned no output.)" });
+      resolve({ exitCode, output: output.trim() || "(CLI returned no output.)" });
     });
   });
 }
 
 async function poll() {
+  let jobHandled = false;
   try {
     const commands = await api("rpc/claim_copilot_command", { method: "POST", body: "{}" });
     const job = commands[0];
     if (job) {
+      jobHandled = true;
       console.log(`Running command ${job.id}`);
       const pushOutput = (output) => {
         api(`copilot_commands?id=eq.${job.id}`, {
@@ -127,7 +151,9 @@ async function poll() {
       : "";
     console.error(`${error.message}${cause}`);
   } finally {
-    setTimeout(poll, pollMs);
+    // Re-check immediately after finishing a job (in case more are queued);
+    // only wait the full poll interval when the queue was empty.
+    setTimeout(poll, jobHandled ? 0 : pollMs);
   }
 }
 
