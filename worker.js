@@ -27,18 +27,41 @@ function required(name) {
   return value;
 }
 
-async function api(route, options = {}) {
+const apiRetries = Number(process.env.COPILOT_API_RETRIES || 3);
+const apiRetryDelayMs = Number(process.env.COPILOT_API_RETRY_DELAY_MS || 1000);
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function apiOnce(route, options) {
   const response = await fetch(`${supabaseUrl}/rest/v1/${route}`, {
     ...options,
+    // Disable keep-alive reuse: on some corporate networks proxies/firewalls
+    // silently drop idle pooled connections, which surfaces as ETIMEDOUT/ECONNRESET
+    // on the next reused request instead of opening a fresh connection.
     headers: {
       apikey: serviceRoleKey,
       authorization: `Bearer ${serviceRoleKey}`,
       "content-type": "application/json",
+      connection: "close",
       ...(options.headers || {}),
     },
   });
   if (!response.ok) throw new Error(`${options.method || "GET"} ${route}: ${await response.text()}`);
   return response.status === 204 ? undefined : response.json();
+}
+
+async function api(route, options = {}) {
+  for (let attempt = 1; attempt <= apiRetries; attempt++) {
+    try {
+      return await apiOnce(route, options);
+    } catch (error) {
+      const isNetworkError = error instanceof TypeError && error.cause;
+      if (!isNetworkError || attempt === apiRetries) throw error;
+      await sleep(apiRetryDelayMs * attempt);
+    }
+  }
 }
 
 const streamMs = Number(process.env.COPILOT_STREAM_MS || 2000);

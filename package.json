@@ -6,5 +6,8 @@
   "scripts": {
     "start:worker": "node worker.js",
     "check": "node --check worker.js"
+  },
+  "dependencies": {
+    "@nut-tree-fork/nut-js": "^4.2.6"
   }
 }

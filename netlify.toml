@@ -1,5 +1,6 @@
 [build]
   publish = "site"
+  command = "echo Static site only - no build step required."
 
 [[headers]]
   for = "/*"
