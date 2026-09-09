@@ -1,6 +1,30 @@
-const { existsSync } = require("node:fs");
+const { existsSync, readFileSync } = require("node:fs");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
+
+// Load local .env file if present
+const envFile = path.resolve(__dirname, ".env");
+if (existsSync(envFile)) {
+  if (typeof process.loadEnvFile === "function") {
+    process.loadEnvFile(envFile);
+  } else {
+    for (const line of readFileSync(envFile, "utf-8").split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const idx = trimmed.indexOf("=");
+      if (idx > 0) {
+        const key = trimmed.slice(0, idx).trim();
+        let val = trimmed.slice(idx + 1).trim();
+        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.slice(1, -1);
+        }
+        if (!process.env[key]) {
+          process.env[key] = val;
+        }
+      }
+    }
+  }
+}
 
 const supabaseUrl = required("SUPABASE_URL");
 const serviceRoleKey = required("SUPABASE_SERVICE_ROLE_KEY");
