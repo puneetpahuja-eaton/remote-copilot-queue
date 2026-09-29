@@ -1,0 +1,16 @@
+{
+  "Mark-LIII": {
+    "upstream_remote": "https://github.com/FatihMakes/Mark-LIII.git",
+    "upstream_branch": "main",
+    "base_commit": "476a9c09d64423e97b08958c4088fde29a1b1713"
+  },
+  "natively-cluely-ai-assistant": {
+    "upstream_remote": "https://github.com/Natively-AI-assistant/natively-cluely-ai-assistant.git",
+    "upstream_branch": "main",
+    "base_commit": "48b05cd1fbb68308a765bce6ba1a50c29b7681ec"
+  },
+  "hermes-agent": {
+    "upstream_remote": "https://github.com/NousResearch/hermes-agent.git",
+    "upstream_branch": "main"
+  }
+}

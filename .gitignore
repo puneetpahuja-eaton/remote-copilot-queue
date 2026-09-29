@@ -1,3 +1,43 @@
+# Dependencies
 node_modules/
+.venv/
+venv/
+env/
+ENV/
+
+# Python cache & build
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+
+# Build artifacts
+dist/
+dist-electron/
 .output/
+target/
+build/Release/
+
+# Site
 site/config.js
+
+# Temporary & logs
+*.log
+*.tmp
+*.tsbuildinfo
+.eslintcache
+
+# Plaintext secrets & local unencrypted backups (safely stored in secrets_vault.enc)
+.env
+.env.*
+!.env.example
+hermes_config/
+backup_hermes.ps1
+Mark-LIII/config/api_keys.json
+Mark-LIII/config/certs/
+natively-cluely-ai-assistant/.env
+
+# Explicitly track encrypted vault & crypto helper
+!secrets_vault.enc
+!vault_crypto.ps1
