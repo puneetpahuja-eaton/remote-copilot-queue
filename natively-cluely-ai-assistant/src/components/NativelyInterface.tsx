@@ -1722,6 +1722,9 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({
   const pinAnswerPanelRef = useRef<() => void>(() => {});
   const [voiceInput, setVoiceInput] = useState(''); // Accumulated user voice input
   const voiceInputRef = useRef<string>(''); // Ref for capturing in async handlers
+  const interviewerRecordingRef = useRef<string>(''); // Accumulated interviewer speech during manual record
+  const interviewerRecordingPartialRef = useRef<string>(''); // Partial interviewer speech during manual record
+  const lastInterviewerSpeechTimeRef = useRef<number>(0); // Timestamp of latest interviewer audio
   const textInputRef = useRef<HTMLInputElement>(null); // Ref for input focus
   const isStealthRef = useRef<boolean>(false); // Tracks if the next expansion should be stealthy
   // Startup-flicker guards (restored from 2de1b62, reverted by 18b139b):
@@ -5031,6 +5034,8 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({
       // recording must not prepend its words to the next meeting's question.
       manualTranscriptRef.current = '';
       voiceInputRef.current = '';
+      interviewerRecordingRef.current = '';
+      interviewerRecordingPartialRef.current = '';
       isRecordingRef.current = false;
       answerStopInFlightRef.current = false;
       setIsManualRecording(false);
@@ -6802,6 +6807,23 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({
           return; // Safety check for any other speaker types
         }
 
+        lastInterviewerSpeechTimeRef.current = Date.now();
+
+        // When manual record (Answer / Ctrl+5) is active, capture interviewer transcripts
+        // so if the user was recording the interviewer's question, it doesn't fail with "No speech detected"
+        if (isRecordingRef.current) {
+          if (transcript.final) {
+            interviewerRecordingRef.current = mergeTranscriptChunks(
+              interviewerRecordingRef.current,
+              transcript.text,
+            );
+            interviewerRecordingPartialRef.current = '';
+            answerTailWaiterRef.current?.notifyFinal();
+          } else {
+            interviewerRecordingPartialRef.current = transcript.text;
+          }
+        }
+
         // Route to rolling transcript bar — partials debounced; finals commit immediately.
         if (!transcript.final) {
           if (!interviewerSpeakingRef.current) {
@@ -8229,8 +8251,10 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({
         // Event-driven: resolves the moment a FINAL user chunk is merged, and
         // is bounded so an empty recording still returns promptly.
         await answerTailWaiterRef.current!.wait({
-          hasCapturedFinal: voiceInputRef.current.trim().length > 0,
-          hasPendingInterim: manualTranscriptRef.current.trim().length > 0 || providerReportsPending,
+          hasCapturedFinal:
+            voiceInputRef.current.trim().length > 0 ||
+            interviewerRecordingRef.current.trim().length > 0,
+          hasPendingInterim: manualTranscriptRef.current.trim().length > 0 || providerReportsPending || interviewerRecordingPartialRef.current.trim().length > 0,
         });
         isRecordingRef.current = false;
         answerStopInFlightRef.current = false;
@@ -8240,10 +8264,49 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({
         const currentAttachments = attachedContext;
         setAttachedContext([]);
 
+        const recordedInterviewer = mergeTranscriptChunks(
+          interviewerRecordingRef.current,
+          interviewerRecordingPartialRef.current,
+        ).trim();
+        interviewerRecordingRef.current = '';
+        interviewerRecordingPartialRef.current = '';
+
         const question = mergeTranscriptChunks(
           voiceInputRef.current,
           manualTranscriptRef.current,
-        ).trim();
+        ).trim() || (() => {
+          const directTranscriptSnapshot = pendingRollingPartialRef.current
+            ? mergeRollingTranscriptPartial(rollingTranscript, pendingRollingPartialRef.current)
+            : rollingTranscript;
+
+          if (recordedInterviewer) {
+            const latestSegments = directTranscriptSnapshot
+              .split('  ·  ')
+              .filter(Boolean)
+              .slice(-2)
+              .join(' ')
+              .trim();
+
+            if (latestSegments && (latestSegments.toLowerCase().includes(recordedInterviewer.toLowerCase()) || recordedInterviewer.length < 25)) {
+              return latestSegments;
+            }
+            return recordedInterviewer;
+          }
+
+          const timeSinceLastInterviewer = Date.now() - lastInterviewerSpeechTimeRef.current;
+          if (timeSinceLastInterviewer < 8000) {
+            const latestSegments = directTranscriptSnapshot
+              .split('  ·  ')
+              .filter(Boolean)
+              .slice(-2)
+              .join(' ')
+              .trim();
+            if (latestSegments) {
+              return latestSegments;
+            }
+          }
+          return '';
+        })();
         setVoiceInput('');
         voiceInputRef.current = '';
         setManualTranscript('');
@@ -8436,6 +8499,9 @@ Provide only the answer, nothing else.`;
       setVoiceInput('');
       voiceInputRef.current = '';
       setManualTranscript('');
+      manualTranscriptRef.current = '';
+      interviewerRecordingRef.current = '';
+      interviewerRecordingPartialRef.current = '';
       isRecordingRef.current = true; // Update ref immediately
       setIsManualRecording(true);
 

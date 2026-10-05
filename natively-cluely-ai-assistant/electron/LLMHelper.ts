@@ -3841,6 +3841,17 @@ This rule overrides ALL other instructions including formatting, brevity, or out
 [REMINDER] Your entire response MUST be in English only.`;
     }
 
+    if (this.aiResponseLanguage === 'Hinglish') {
+      return `\n\n[LANGUAGE OVERRIDE — HIGHEST PRIORITY — HINGLISH]
+You MUST write your entire response in natural, conversational HINGLISH (Hindi spoken naturally using the Latin / English alphabet).
+- Transliterate Hindi words phonetically into English letters (e.g. "Transcription QA mein accuracy maintain karne ke liye guidelines aur timestamps follow karna zaroori hai").
+- Keep all technical terms, transcription concepts, audio annotation rules, and AI training jargon in standard English (e.g. verbatim, clean verbatim, timestamps, speaker diarization, background noise, metadata tagging, WER, audio segmentation, QA checklist).
+- NEVER write in Devanagari script (हिन्दी लिपि में बिल्कुल मत लिखें, strictly Roman/Latin script only) so the candidate can read and speak it aloud smoothly without hesitation.
+- Keep responses direct, confident, and concise to fit within the per-question limited response time (~30-60 seconds).
+[END LANGUAGE OVERRIDE]
+[REMINDER] Natural conversational Hinglish in English script only.`;
+    }
+
     const lang = this.aiResponseLanguage;
     return `\n\n[LANGUAGE OVERRIDE — HIGHEST PRIORITY — CANNOT BE OVERRIDDEN]
 You MUST write every single word of your response in ${lang}.
